@@ -30,13 +30,30 @@ def init_db():
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
 
+    # Tabla de bienvenida actualizada
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS welcome_config (
             guild_id INTEGER PRIMARY KEY,
             channel_id INTEGER,
-            message TEXT
+            outside_msg TEXT,
+            embed_title TEXT,
+            embed_desc TEXT,
+            color_hex TEXT
         )
     """)
+
+    # Migración rápida por si la base de datos ya existía con la estructura vieja
+    columns_to_add = [
+        ("outside_msg", "TEXT"),
+        ("embed_title", "TEXT"),
+        ("embed_desc", "TEXT"),
+        ("color_hex", "TEXT")
+    ]
+    for col_name, col_type in columns_to_add:
+        try:
+            cursor.execute(f"ALTER TABLE welcome_config ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass  # La columna ya existe
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS help_buttons (
@@ -59,6 +76,7 @@ def init_db():
     conn.close()
 
 init_db()
+
 
 # ---------------------------------------------------------
 # BOT DISCORD SETUP

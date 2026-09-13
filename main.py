@@ -147,22 +147,33 @@ async def on_ready():
 async def on_member_join(member: discord.Member):
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT channel_id, message FROM welcome_config WHERE guild_id = ?", (member.guild.id,))
+    cursor.execute("SELECT channel_id, outside_msg, embed_title, embed_desc, color_hex FROM welcome_config WHERE guild_id = ?", (member.guild.id,))
     row = cursor.fetchone()
     conn.close()
 
     if row:
-        channel_id, raw_msg = row
+        channel_id, outside_msg, embed_title, embed_desc, color_hex = row
         channel = member.guild.get_channel(channel_id)
         if channel:
-            msg = raw_msg.replace("{user}", member.mention).replace("{server}", member.guild.name)
-            embed = discord.Embed(
-                title="Bienvenido",
-                description=msg,
-                color=discord.Color.blue()
-            )
-            await channel.send(embed=embed)
+            # Color conversion
+            try:
+                hex_clean = color_hex.lstrip('#') if color_hex else "3498db"
+                color_int = int(hex_clean, 16)
+            except ValueError:
+                color_int = 0x3498db
 
+            # Text replacements
+            out_msg = outside_msg.replace("{user}", member.mention).replace("{server}", member.guild.name) if outside_msg else None
+            title_text = embed_title.replace("{user}", member.name).replace("{server}", member.guild.name) if embed_title else "Bienvenido"
+            desc_text = embed_desc.replace("{user}", member.mention).replace("{server}", member.guild.name) if embed_desc else "¡Bienvenido al servidor!"
+
+            embed = discord.Embed(
+                title=title_text,
+                description=desc_text,
+                color=discord.Color(color_int)
+            )
+            await channel.send(content=out_msg, embed=embed)
+            
 # ---------------------------------------------------------
 # COMANDOS PREFIX (REGLA DE ORO: ID TUTUSITO_0213)
 # ---------------------------------------------------------
@@ -322,29 +333,66 @@ async def reactionroles(interaction: discord.Interaction, message_id: str):
     view = RoleSelectView(msg_id, roles)
     await interaction.response.send_message("Selecciona los roles:", view=view, ephemeral=True)
 
-@bot.tree.command(name="bienvenida", description="Configura mensajes de bienvenida")
+@bot.tree.command(name="bienvenida", description="Configura los mensajes de bienvenida del servidor.")
 @app_commands.describe(
-    canal="Canal para el mensaje",
-    mensaje="Usa {user} para mención y {server} para el servidor"
+    canal="Canal donde se enviarán las bienvenidas",
+    mensaje_fuera="Mensaje fuera del embed. Usa {user} o {server}",
+    titulo_embed="Título del embed de bienvenida",
+    descripcion_embed="Descripción dentro del embed. Usa {user} o {server}",
+    color_hex="Color del embed en HEX (Ejemplo: #3498db)",
+    demostrar="Muestra una prueba de cómo se verá la bienvenida"
 )
-async def bienvenida(interaction: discord.Interaction, canal: discord.TextChannel, mensaje: str):
-    if not is_owner(interaction):
+async def bienvenida(
+    interaction: discord.Interaction,
+    canal: discord.TextChannel,
+    mensaje_fuera: str = None,
+    titulo_embed: str = None,
+    descripcion_embed: str = None,
+    color_hex: str = "#3498db",
+    demostrar: bool = False
+):
+    # REGLA DE ORO: Verificación estricta de ID
+    if interaction.user.id != 1491476806203740373:
         await interaction.response.send_message("Sin permiso.", ephemeral=True)
         return
+
+    # Validar color hex
+    try:
+        hex_clean = color_hex.lstrip('#')
+        color_int = int(hex_clean, 16)
+    except ValueError:
+        color_int = 0x3498db  # Color por defecto si el hex es inválido
 
     conn = sqlite3.connect("bot_data.db")
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO welcome_config (guild_id, channel_id, message)
-        VALUES (?, ?, ?)
+        INSERT INTO welcome_config (guild_id, channel_id, outside_msg, embed_title, embed_desc, color_hex)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(guild_id) DO UPDATE SET
         channel_id = excluded.channel_id,
-        message = excluded.message
-    """, (interaction.guild.id, canal.id, mensaje))
+        outside_msg = COALESCE(excluded.outside_msg, outside_msg),
+        embed_title = COALESCE(excluded.embed_title, embed_title),
+        embed_desc = COALESCE(excluded.embed_desc, embed_desc),
+        color_hex = COALESCE(excluded.color_hex, color_hex)
+    """, (interaction.guild.id, canal.id, mensaje_fuera, titulo_embed, descripcion_embed, color_hex))
     conn.commit()
     conn.close()
 
-    await interaction.response.send_message(f"Bienvenida establecida en {canal.mention}", ephemeral=True)
+    await interaction.response.send_message(f"Configuración de bienvenida guardada para {canal.mention}.", ephemeral=True)
+
+    # Demostración del mensaje si se solicita
+    if demostrar:
+        raw_outside = mensaje_fuera or ""
+        out_msg = raw_outside.replace("{user}", interaction.user.mention).replace("{server}", interaction.guild.name)
+
+        embed = discord.Embed(
+            title=(titulo_embed or "Bienvenido").replace("{user}", interaction.user.name).replace("{server}", interaction.guild.name),
+            description=(descripcion_embed or "¡Bienvenido al servidor!").replace("{user}", interaction.user.mention).replace("{server}", interaction.guild.name),
+            color=discord.Color(color_int)
+        )
+        
+        await canal.send(content=out_msg if out_msg else None, embed=embed)
+        
 
 @bot.tree.command(
     name="msj",

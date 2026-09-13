@@ -346,6 +346,106 @@ async def bienvenida(interaction: discord.Interaction, canal: discord.TextChanne
 
     await interaction.response.send_message(f"Bienvenida establecida en {canal.mention}", ephemeral=True)
 
+@bot.tree.command(
+    name="msj",
+    description="Envía un mensaje, archivo, respuesta o reacción de forma anónima.",
+)
+@app_commands.describe(
+    canal="Canal donde se enviará el mensaje (opcional, por defecto el actual)",
+    texto="Texto o mensaje a enviar",
+    archivo="Imagen, video o archivo adjunto",
+    reply_to="ID del mensaje al que quieres responder",
+    reaccionar_to="ID del mensaje al que quieres reaccionar",
+    emoji="Emoji para reaccionar (requiere reaccionar_to)",
+)
+async def msj(
+    interaction: discord.Interaction,
+    canal: discord.TextChannel = None,
+    texto: str = None,
+    archivo: discord.Attachment = None,
+    reply_to: str = None,
+    reaccionar_to: str = None,
+    emoji: str = None,
+):
+    # REGLA DE ORO: Verificación estricta de ID
+    if interaction.user.id != 1491476806203740373:
+        await interaction.response.send_message("Sin permiso.", ephemeral=True)
+        return
+
+    target_channel = canal or interaction.channel
+    file_to_send = await archivo.to_file() if archivo else None
+
+    # Manejar reacción
+    if reaccionar_to and emoji:
+        try:
+            msg_id = int(reaccionar_to)
+            target_msg = await target_channel.fetch_message(msg_id)
+            await target_msg.add_reaction(emoji)
+        except Exception as e:
+            await interaction.response.send_message(
+                f"Error al reaccionar: {e}", ephemeral=True
+            )
+            return
+
+    # Manejar envío de mensaje o respuesta
+    if texto or file_to_send:
+        try:
+            if reply_to:
+                msg_id = int(reply_to)
+                target_msg = await target_channel.fetch_message(msg_id)
+                await target_msg.reply(content=texto, file=file_to_send)
+            else:
+                await target_channel.send(content=texto, file=file_to_send)
+        except Exception as e:
+            await interaction.response.send_message(
+                f"Error al enviar mensaje: {e}", ephemeral=True
+            )
+            return
+
+    await interaction.response.send_message(
+        "Acción ejecutada correctamente.", ephemeral=True
+    )
+    
+
+@bot.command(name="ayuda")
+async def ayuda(ctx):
+    # REGLA DE ORO: Verificación estricta de ID
+    if ctx.author.id != 1491476806203740373:
+        return
+
+    embed = discord.Embed(
+        title="Panel de Control del Bot",
+        description="Lista de comandos del servidor:",
+        color=discord.Color.dark_red()
+    )
+
+    embed.add_field(
+        name="Comandos de Prefijo (-)",
+        value=(
+            "• `-setupcanales`: Borra todos los canales existentes y crea la estructura oficial.\n"
+            "• `-purge [cantidad]`: Elimina el número de mensajes especificado en el canal.\n"
+            "• `-rc`: Reestablece/clona el canal actual manteniendo su posición y configuración.\n"
+            "• `-panelayuda`: Muestra el panel interactivo público con botones.\n"
+            "• `-ayuda`: Muestra esta lista de comandos."
+        ),
+        inline=False
+    )
+
+    embed.add_field(
+        name="Comandos de Barra (/)",
+        value=(
+            "• `/embed [titulo] [descripcion]`: Envía un mensaje embed sin mostrar quién lo creó.\n"
+            "• `/configpanel [titulo] [descripcion] [nuevo_boton_texto] [nuevo_boton_respuesta]`: Configura las respuestas y botones del panel de ayuda.\n"
+            "• `/reactionroles [message_id]`: Configura un panel para asignar roles mediante reacciones.\n"
+            "• `/bienvenida [canal] [mensaje]`: Configura el canal y texto de bienvenida automática.\n"
+            "• `/msj [canal] [texto] [archivo] [reply_to] [reaccionar_to] [emoji]`: Envía mensajes, imágenes, videos, responde o reacciona de forma anónima."
+        ),
+        inline=False
+    )
+
+    embed.set_footer(text="Acceso exclusivo asignado.")
+    await ctx.send(embed=embed)
+    
 # ---------------------------------------------------------
 # INICIO
 # ---------------------------------------------------------
